@@ -8,12 +8,39 @@ import numpy.testing as tst
 import matplotlib.pyplot as plt
 import tensorflow_datasets as tfds
 class TestMain(unittest.TestCase):
+
+    def test_zero_mean_normal(self):
+        print(1)
     def test_sigmoid(self):
         X = np.array([[1,2],[4,-1]])
         res = main.sigmoid(X)
         expected = np.array([[0.7310586,0.8807971],[0.9820138,0.2689414]])
         tst.assert_almost_equal(res,expected)
-    def test_cross_entropy_loss(self):
+
+    def test_relu(self):
+        X = np.array([[1, 2], [4, -1]])
+        res = main.lrelu(X)
+        g = main.lrelugrad(X)
+        print((res,g))
+
+    def test_softmax(self):
+        X = np.array([[1,2],[4.0,-1]])
+        res = main.softmax(X)
+        grad = main.softgrad(X)
+        X[1][0]+=.001
+
+        res2 = main.softmax(X)
+        print((res2 - res) / .001)
+
+        print(grad)
+
+    def test_entropy_loss(self):
+        X = np.array([[1, 2, 3]])
+        sm = main.softmax(X)
+        c, g = main.crossEntropyCost(sm,[.5, .25, .25])
+        grads = g * main.softgrad(X)
+        print((c,grads,sm))
+    def test_bin_cross_entropy_loss(self):
         A = np.array([[0.5002307,  0.49985831, 0.50023963]])
         Y = np.array([[1, 0, 0]])
         cost = main.crossEntropyCost(A,Y)
@@ -42,7 +69,7 @@ class TestMain(unittest.TestCase):
 
     def testWithRandomData(self):
         l = main.layer(4, main.layer.TANH)
-        l.append(1,main.layer.SIGMOID)
+        l.append(2,main.layer.SOFTMAX)
         m = main.model(l, 'crossEntropyCost', learningRate=.01)
         n = 100
         k = 10
@@ -70,15 +97,43 @@ class TestMain(unittest.TestCase):
         for i in range(20):
             print(f"P1: {p1[i]}, P2: {p2[i]}, Actual: {testodata[i]}")
 
+    def test_dataset2(self):
+
+        l = main.layer(40, main.layer.LRELU)
+        h = l.append(40,main.layer.TANH)
+        o = h.append(1,main.layer.LINEAR,normal=None )
+        m = main.model(l, main.model.MSR,learningRate=.0000002)
+        ds, info = tfds.load("diamonds", with_info=True, as_supervised=True, split=['train'])
+        inputdata, outputdata = self.to_ndarray(ds[0])
+        inputdata = [[v for _, v in l[0].items()] for l in inputdata]
+
+        tsize = len(inputdata) - 20
+
+        inputdata = inputdata / np.max(inputdata,axis=0,keepdims=True)
+        maxoutput = np.max(outputdata,axis=0,keepdims=True)
+        testidata, testodata = inputdata[tsize:], outputdata[tsize:]
+        outputdata = outputdata / maxoutput
+        inputdata, outputdata = inputdata[:tsize], outputdata[:tsize]
+        p1 = m.predict(testidata)
+        c = m.train(inputdata, outputdata, 30)
+        print(c)
+        p2 = m.predict(testidata)
+        p2 *= maxoutput
+        p3 = []
+        #for i in range(len(p2)):
+        #    p3.append([f"{el:.2%}" for el in p2[i]])
+        for i in range(len(p2)):
+            print(f"P2: {p2[i]}, Actual: {testodata[i]}")
 
     def test_simple(self):
         l = main.layer(1,main.layer.TANH)
+
         m = l.append(1,main.layer.TANH)
-        m.append(1,main.layer.SIGMOID)
+        m.append(2,main.layer.SOFTMAX)
         n= 100
         input = [[random.randint(0,1)] for _ in range(n)]
         output = [i for i in input]
-        m = main.model(l,'crossEntropyCost',learningRate=1)
+        m = main.model(l,main.model.CROSS,learningRate=.01)
         m.train(input,output)
         testi = [[random.randint(0,1)] for _ in range(10)]
         p = m.predict(testi)
@@ -86,14 +141,12 @@ class TestMain(unittest.TestCase):
             print(f"Input: {ival} Actual: {p[i]}")
 
     def test_small(self):
-        l = main.layer(2,main.layer.TANH)
-        m = l.append(2,main.layer.SIGMOID)
-
-        #o = m.append(5,main.layer.TANH)
-        #m.append(1,main.layer.SIGMOID)
+        l = main.layer(7,main.layer.LRELU)
+        m = l.append(7,main.layer.LRELU)
+        m.append(2,main.layer.SOFTMAX)
         input = [[0],[1]]
-        output = [[0,1],[1,1]]
-        m = main.model(l,'crossEntropyCost',learningRate=.3)
+        output = [[0],[1]]
+        m = main.model(l,main.model.CROSS   ,learningRate=.3)
         m.train(input,output)
         testi = [[0],[1]]
         p = m.predict(testi)
