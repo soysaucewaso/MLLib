@@ -111,7 +111,8 @@ class model:
 
     # optimizers
     MOMENTUM = [optimizefuncs.momentuminit, optimizefuncs.momentum]
-
+    RMSP = [optimizefuncs.rmspinit, optimizefuncs.rmsp]
+    ADAM = [optimizefuncs.adaminit, optimizefuncs.adam]
     def __init__(self, rootLayer: layer, cost, learningRate: float = .1, optimizer=MOMENTUM):
         """
         :param rootLayer: inputLayer

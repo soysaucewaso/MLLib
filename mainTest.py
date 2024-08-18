@@ -102,7 +102,7 @@ class TestMain(unittest.TestCase):
         l = main.layer(40, main.layer.LRELU)
         h = l.append(40,main.layer.TANH)
         o = h.append(1,main.layer.LINEAR,normal=None )
-        m = main.model(l, main.model.MSR,learningRate=.0000002)
+        m = main.model(l, main.model.MSR,learningRate=.005,optimizer=main.model.ADAM)
         ds, info = tfds.load("diamonds", with_info=True, as_supervised=True, split=['train'])
         inputdata, outputdata = self.to_ndarray(ds[0])
         inputdata = [[v for _, v in l[0].items()] for l in inputdata]
@@ -115,7 +115,7 @@ class TestMain(unittest.TestCase):
         outputdata = outputdata / maxoutput
         inputdata, outputdata = inputdata[:tsize], outputdata[:tsize]
         p1 = m.predict(testidata)
-        c = m.train(inputdata, outputdata, 30)
+        c = m.train(inputdata, outputdata, 100)
         print(c)
         p2 = m.predict(testidata)
         p2 *= maxoutput
@@ -146,7 +146,7 @@ class TestMain(unittest.TestCase):
         m.append(2,main.layer.SOFTMAX)
         input = [[0],[1]]
         output = [[0],[1]]
-        m = main.model(l,main.model.CROSS   ,learningRate=.3)
+        m = main.model(l,main.model.CROSS   ,learningRate=.3,optimizer=main.model.ADAM)
         m.train(input,output,numIterations=10)
         testi = [[0],[1]]
         p = m.predict(testi)
