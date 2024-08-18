@@ -1,5 +1,8 @@
 import numpy as np
-EP = 10**-5
+
+import universalconsts
+
+EP = universalconsts.EP
 
 def simplenormal(input):
     return input / np.max(input)

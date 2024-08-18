@@ -5,6 +5,8 @@ import activationfuncs as a
 import costfuncs
 import normalfuncs
 import weightinitfuncs
+import optimizefuncs
+
 LRELUW = .01
 
 
@@ -32,7 +34,8 @@ class layer:
     # Weight Init Functions
     HENORM = (weightinitfuncs.henormal,)
     XAVUNI = (weightinitfuncs.xavieruni,)
-    def __init__(self, amtNeurons: int, activation, prev: 'layer' = None, normal = None,weightinit = None):
+
+    def __init__(self, amtNeurons: int, activation, prev: 'layer' = None, normal=None, weightinit=None):
         """
         :param amtNeurons: size of the layer
         :param activation: activation function used to transform output
@@ -60,7 +63,7 @@ class layer:
         if prev is not None:
             self.initWeights(prev.amtNeurons)
 
-    def append(self, amtNeurons: int, activation, normal = ZMNORMAL):
+    def append(self, amtNeurons: int, activation, normal=ZMNORMAL):
         nextLayer = layer(amtNeurons, activation, prev=self)
         nextLayer.initWeights(self.amtNeurons)
         if self.next is not None:
@@ -76,34 +79,40 @@ class layer:
     def initWeights(self, inputSize: int):
         if inputSize == 0:
             return
-        self.weights = self.weightinit[0](inputSize,self.amtNeurons)
-        self.biases = np.full((1, self.amtNeurons),self.BIAS_INIT)
+        self.weights = self.weightinit[0](inputSize, self.amtNeurons)
+        self.biases = np.full((1, self.amtNeurons), self.BIAS_INIT)
 
     @staticmethod
-    def multiple(amtNeurons: [int], activation: str, prev: 'layer' = None,normalL: list = None,normal1 = None,normalA =ZMNORMAL):
+    def multiple(amtNeurons: [int], activation: str, prev: 'layer' = None, normalL: list = None, normal1=None,
+                 normalA=ZMNORMAL):
         if len(amtNeurons) == 0:
             return
         i = 0
         if normalL is not None:
-            assert(len(normalL) == len(amtNeurons))
+            assert (len(normalL) == len(amtNeurons))
             normal1 = normalL[0]
         if prev is None:
-            rootL = layer(amtNeurons[i], activation,normal=normal1)
+            rootL = layer(amtNeurons[i], activation, normal=normal1)
         else:
-            rootL = prev.append(amtNeurons[i], activation,normal=normalL[0] if normalL is not None else normalA)
+            rootL = prev.append(amtNeurons[i], activation, normal=normalL[0] if normalL is not None else normalA)
         curr = rootL
-        i+=1
+        i += 1
         while i < len(amtNeurons):
-            curr = rootL.append(amtNeurons[i], activation,normal=normalL[i] if normalL is not None else normalA)
+            curr = rootL.append(amtNeurons[i], activation, normal=normalL[i] if normalL is not None else normalA)
             i += 1
         return rootL, curr
 
 
 class model:
+    # cost functions
     BINCROSS = costfuncs.bincrossEntropyCost
     CROSS = costfuncs.crossEntropyCost
     MSR = costfuncs.meanSquareError
-    def __init__(self, rootLayer: layer, cost, learningRate: float = .1):
+
+    # optimizers
+    MOMENTUM = [optimizefuncs.momentuminit, optimizefuncs.momentum]
+
+    def __init__(self, rootLayer: layer, cost, learningRate: float = .1, optimizer=MOMENTUM):
         """
         :param rootLayer: inputLayer
         :param num_iterations: how many times the model trains
@@ -115,10 +124,16 @@ class model:
         """
         self.rootLayer: layer = rootLayer
         self.tailLayer: layer = self.rootLayer
+        self.numLayers = 0 if rootLayer is None else 1
         while self.tailLayer.next:
             self.tailLayer = self.tailLayer.next
+            self.numLayers += 1
         self.learningRate: float = learningRate
         self.cost = cost if cost is not None else self.MSR
+
+        self.optimizer = optimizer
+        self.graddict = {'t': 1}
+        self.optimizer[0](self.graddict,self.rootLayer)
 
     def train(self, inputData: [[float]], outputData: [[float]], numIterations: int = 100):
         inputData = np.array(inputData)
@@ -126,7 +141,7 @@ class model:
         ex = outputData.shape[0]
         if self.tailLayer.activation == self.tailLayer.SOFTMAX and np.shape(outputData)[1] == 1:
             n = self.tailLayer.amtNeurons
-            o = np.zeros((ex,n))
+            o = np.zeros((ex, n))
             for i in range(ex):
                 o[i, outputData[i][0]] = 1
             outputData = o
@@ -145,7 +160,8 @@ class model:
                 return False
             cost, grads = self.computeCost(predictions, outputData)
             c.append(np.sum(cost))
-            self.backwardPropagate(self.tailLayer, grads)
+            self.backwardPropagate(self.tailLayer, grads,self.numLayers - 1)
+            self.graddict['t'] += 1
         return c
 
     def predict(self, inputData: [[float]]):
@@ -186,7 +202,7 @@ class model:
         cost, grads = self.cost(prediction, outputData)
         return cost, grads
 
-    def backwardPropagate(self, currLayer: layer, grads: [[float]]):
+    def backwardPropagate(self, currLayer: layer, grads: [[float]], i):
         assert (currLayer)
         x = currLayer.cache[0]
         nx = currLayer.cache[1]
@@ -201,16 +217,16 @@ class model:
 
         currLayer.cache = None
         if currLayer.prev is None:
-            self.adjustWeights(currLayer, dW, dB)
+            self.adjustWeights(currLayer, dW, dB, i)
             return
 
         # dZ/dN(X) = WT
         # dN(X)/dX = 1x2
 
-        #XW = 1x3
-        #dX = 3x2
-        #dL/dX = 1x2
-        #dZ/dX =
+        # XW = 1x3
+        # dX = 3x2
+        # dL/dX = 1x2
+        # dZ/dX =
 
         # dX: Z * B
         WT = np.transpose(currLayer.weights)
@@ -221,11 +237,13 @@ class model:
             WT = WT * normalgrad
         dX = np.dot(dZ, WT)
 
-        self.adjustWeights(currLayer, dW, dB)
-        self.backwardPropagate(currLayer.prev, dX)
+        self.adjustWeights(currLayer, dW, dB, i)
+        self.backwardPropagate(currLayer.prev, dX, i-1)
 
-    def adjustWeights(self, currLayer: layer, wGrads: [[float]], bGrads: [[float]]):
+    def adjustWeights(self, currLayer: layer, wGrads: [[float]], bGrads: [[float]], i):
         assert (np.shape(wGrads) == np.shape(currLayer.weights))
         assert (np.shape(bGrads) == np.shape(currLayer.biases))
-        currLayer.weights -= wGrads * self.learningRate
-        currLayer.biases -= bGrads * self.learningRate
+        w = self.optimizer[1](self.graddict, wGrads, i, True)
+        b = self.optimizer[1](self.graddict, bGrads, i, False)
+        currLayer.weights -= w * self.learningRate
+        currLayer.biases -= b * self.learningRate

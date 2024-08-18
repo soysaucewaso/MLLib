@@ -1,4 +1,8 @@
 import numpy as np
+
+import universalconsts
+
+EP = universalconsts.EP
 def bincrossEntropyCost(predicted: [[float]], actual: [[float]]):
     predicted = np.array(predicted)
     actual = np.array(actual)
@@ -14,9 +18,9 @@ def bincrossEntropyCost(predicted: [[float]], actual: [[float]]):
         cost = np.sum(loss, keepdims=True) / (m)
 
     # grads
-    grads = predicted - actual
-    denom = predicted * (1 - predicted)
-    grads = grads / denom
+    grads = (predicted - actual) + EP
+    denom = predicted * (1 - predicted) + EP
+    grads = grads  / denom
     return cost, grads
 
 def crossEntropyCost(predicted: [[float]], actual: [[float]]):
@@ -27,8 +31,8 @@ def crossEntropyCost(predicted: [[float]], actual: [[float]]):
     c = np.sum(cost)
     # (a - y) / (a*(1-a)), only for softmax
     # otherwise y / a
-    grads = predicted - actual
-    denom = predicted * (1 - predicted)
+    grads = predicted - actual + EP
+    denom = predicted * (1 - predicted) + EP
     grads = grads / denom
     return cost, grads
 
