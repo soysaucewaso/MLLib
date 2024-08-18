@@ -147,7 +147,7 @@ class TestMain(unittest.TestCase):
         input = [[0],[1]]
         output = [[0],[1]]
         m = main.model(l,main.model.CROSS   ,learningRate=.3)
-        m.train(input,output)
+        m.train(input,output,numIterations=10)
         testi = [[0],[1]]
         p = m.predict(testi)
         for i, ival in enumerate(testi):

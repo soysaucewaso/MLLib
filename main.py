@@ -1,113 +1,14 @@
 import math
 
 import numpy as np
-
+import activationfuncs as a
+import costfuncs
+import normalfuncs
+import weightinitfuncs
 LRELUW = .01
-EP = 10**-5
-def sigmoid(values: [[float]]) -> np.ndarray:
-    # logistic function
-    # 1 / (1+e^x)
-    values = np.clip(values, -300, 300)
-    expValues = np.exp(-values)
-    return 1 / (1 + expValues)
 
 
-def siggrad(values: [[float]]):
-    s = sigmoid(values)
-    return s * (1 - s)
-
-def lrelu(values: [[float]]) -> np.ndarray:
-    return np.where(values >= 0,values, values * .01)
-
-def lrelugrad(values: [[float]]) -> np.ndarray:
-    return np.where(values >= 0, 1, .01)
-def softmax(values: [[float]]):
-    D = np.max(values,axis=1).reshape(-1,1)
-    # n by neurons
-    expValues = np.exp(values - D)
-    sum = np.sum(expValues, axis=1).reshape(-1, 1)
-    soft = expValues / sum
-    return soft
-
-def softgrad(values: [[float]]):
-    # n by neurons
-    # only consider diagonal for simplicity, and because
-    # cross entropy cost eliminates other terms
-
-    # s(1-s)
-    s = softmax(values)
-    return s * (1-s)
-def tanh(values):
-    return np.tanh(values)
-
-
-def tanhgrad(values):
-    return 1 - tanh(values) ** 2
-
-def bincrossEntropyCost(predicted: [[float]], actual: [[float]]):
-    predicted = np.array(predicted)
-    actual = np.array(actual)
-    # loss = - yln(a) - (1-y)(ln(1-a))
-    # cost function for binary classification
-    # cost = loss / m
-    m = predicted.shape[0]
-    try:
-        loss = - (actual * np.log(predicted)) - ((1 - actual) * np.log(1 - predicted))
-        cost = np.sum(loss, keepdims=True) / (m)
-    except:
-        loss = None
-        cost = np.sum(loss, keepdims=True) / (m)
-
-    # grads
-    grads = predicted - actual
-    denom = predicted * (1 - predicted)
-    grads = grads / denom
-    return cost, grads
-
-def crossEntropyCost(predicted: [[float]], actual: [[float]]):
-    predicted = np.array(predicted)
-    actual = np.array(actual)
-    ln = np.log(predicted)
-    cost = - np.sum((actual * ln),axis=1,keepdims=True)
-    c = np.sum(cost)
-    # (a - y) / (a*(1-a)), only for softmax
-    # otherwise y / a
-    grads = predicted - actual
-    denom = predicted * (1 - predicted)
-    grads = grads / denom
-    return cost, grads
-
-def meanSquareError(predicted: [[float]], actual: [[float]]):
-    predicted = np.array(predicted)
-    actual = np.array(actual)
-
-    error = np.square(actual - predicted)
-    cost = np.sum(error,axis=1,keepdims=True)
-    grads = 2 * (predicted - actual)
-    return cost, grads
-def simplenormal(input):
-    return input / np.max(input)
-
-def minmaxnormal(input):
-    mi = np.min(input)
-    ma = np.max(input)
-    d = ma - mi
-    return np.where(d == 0,1,(input - mi) / d)
-
-def variance(data,mean=None):
-    if mean is None:
-        mean = np.average(data,axis=0,keepdims=True)
-    error = np.square((data-mean))
-    return np.sum(error,axis=0,keepdims=True) / np.shape(data)[0]
-def zeromeannormal(input):
-    avg = np.average(input,axis=0,keepdims=True)
-    var = variance(input,avg)
-    # (x - avg) / sqrt(var + ep)
-    return (input - avg) / np.sqrt(var+EP)
-
-def zeromeannormgrad(input):
-    g = 1 / np.sqrt(variance(input)+EP)
-    return g
+#
 class layer:
     """A layer of a ML model
 
@@ -117,14 +18,21 @@ class layer:
     """
     WEIGHT_INIT_SCALAR = .1
     BIAS_INIT = 0.0
-    SIGMOID = [sigmoid, siggrad]
-    TANH = [tanh, tanhgrad]
-    SOFTMAX = [softmax, softgrad]
+    SIGMOID = [a.sigmoid, a.siggrad]
+    TANH = [a.tanh, a.tanhgrad]
+    SOFTMAX = [a.softmax, a.softgrad]
     # leaky relu
-    LRELU = [lrelu, lrelugrad]
+    LRELU = [a.lrelu, a.lrelugrad]
     LINEAR = [lambda x: x, lambda _: 1]
-    ZMNORMAL = [zeromeannormal, zeromeannormgrad]
-    def __init__(self, amtNeurons: int, activation, prev: 'layer' = None, normal = None):
+
+    # normalization
+    MINMAX = [normalfuncs.minmaxnormal, normalfuncs.minmaxgrad]
+    ZMNORMAL = [normalfuncs.zeromeannormal, normalfuncs.zeromeangrad]
+
+    # Weight Init Functions
+    HENORM = (weightinitfuncs.henormal,)
+    XAVUNI = (weightinitfuncs.xavieruni,)
+    def __init__(self, amtNeurons: int, activation, prev: 'layer' = None, normal = None,weightinit = None):
         """
         :param amtNeurons: size of the layer
         :param activation: activation function used to transform output
@@ -136,6 +44,12 @@ class layer:
         """
         self.amtNeurons = amtNeurons
         self.activation = activation
+        if weightinit is not None:
+            self.weightinit = weightinit
+        elif activation == self.SIGMOID or activation == self.TANH or activation == self.SOFTMAX:
+            self.weightinit = self.XAVUNI
+        else:
+            self.weightinit = self.HENORM
 
         self.prev: 'layer' = prev
         self.next: 'layer' = None
@@ -143,7 +57,6 @@ class layer:
         self.cache: [[float]] = None
 
         self.normal = normal
-
         if prev is not None:
             self.initWeights(prev.amtNeurons)
 
@@ -163,8 +76,7 @@ class layer:
     def initWeights(self, inputSize: int):
         if inputSize == 0:
             return
-        # randomly init to prevent neurons all getting the same weights
-        self.weights = np.random.random([inputSize, self.amtNeurons]) * layer.WEIGHT_INIT_SCALAR
+        self.weights = self.weightinit[0](inputSize,self.amtNeurons)
         self.biases = np.full((1, self.amtNeurons),self.BIAS_INIT)
 
     @staticmethod
@@ -188,9 +100,9 @@ class layer:
 
 
 class model:
-    BINCROSS = bincrossEntropyCost
-    CROSS = crossEntropyCost
-    MSR = meanSquareError
+    BINCROSS = costfuncs.bincrossEntropyCost
+    CROSS = costfuncs.crossEntropyCost
+    MSR = costfuncs.meanSquareError
     def __init__(self, rootLayer: layer, cost, learningRate: float = .1):
         """
         :param rootLayer: inputLayer
@@ -206,9 +118,9 @@ class model:
         while self.tailLayer.next:
             self.tailLayer = self.tailLayer.next
         self.learningRate: float = learningRate
-        self.cost = cost if cost is not None else bincrossEntropyCost
+        self.cost = cost if cost is not None else self.MSR
 
-    def train(self, inputData: [[float]], outputData: [[float]], numIterations: int = 100,normal=minmaxnormal):
+    def train(self, inputData: [[float]], outputData: [[float]], numIterations: int = 100):
         inputData = np.array(inputData)
         outputData = np.array(outputData)
         ex = outputData.shape[0]
@@ -228,7 +140,7 @@ class model:
         """
         c = []
         for i in range(numIterations):
-            predictions = self.forwardPropagate(self.rootLayer, inputData, True,normal)
+            predictions = self.forwardPropagate(self.rootLayer, inputData, True)
             if math.isnan(predictions[0][0]):
                 return False
             cost, grads = self.computeCost(predictions, outputData)
@@ -236,14 +148,14 @@ class model:
             self.backwardPropagate(self.tailLayer, grads)
         return c
 
-    def predict(self, inputData: [[float]],normal=minmaxnormal):
+    def predict(self, inputData: [[float]]):
         if self.rootLayer.weights is None:
             return
         assert (np.shape(np.shape(inputData)[1] == self.rootLayer.weights)[0])
-        predictions = self.forwardPropagate(self.rootLayer, inputData, False,normal)
+        predictions = self.forwardPropagate(self.rootLayer, inputData, False)
         return predictions
 
-    def forwardPropagate(self, currLayer: layer, inputData: [[float]], cacheData: bool, normal):
+    def forwardPropagate(self, currLayer: layer, inputData: [[float]], cacheData: bool):
         assert (currLayer)
         assert (np.shape(np.shape(inputData)[1] == currLayer.weights)[0])
         """
@@ -262,7 +174,7 @@ class model:
         if currLayer.next is None:
             return outputData
         else:
-            return self.forwardPropagate(currLayer.next, outputData, cacheData, normal)
+            return self.forwardPropagate(currLayer.next, outputData, cacheData)
 
     def computeCost(self, prediction, outputData):
         """
