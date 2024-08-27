@@ -1,12 +1,20 @@
+import math
 import random
 import unittest
 import collections
+
+import layers
+import normalfuncs
+
 collections.Callable = collections.abc.Callable
 import main
 import numpy as np
 import numpy.testing as tst
 import matplotlib.pyplot as plt
 import tensorflow_datasets as tfds
+
+
+
 class TestMain(unittest.TestCase):
 
     def test_zero_mean_normal(self):
@@ -60,11 +68,6 @@ class TestMain(unittest.TestCase):
         pred = m.predict([[-.5,.5],[30,2]])
         print(pred)
 
-    def to_ndarray(self,dataset):
-        inputdata = np.array([np.array(e[0]).flatten() for e in dataset])
-        outputdata = np.reshape([np.array(e[1]) for e in dataset],(-1,1))
-        return inputdata, outputdata
-
 
 
     def testWithRandomData(self):
@@ -86,7 +89,7 @@ class TestMain(unittest.TestCase):
         l = main.layer(1, 'sigmoid')
         m = main.model(l,'crossEntropyCost',learningRate=.00001)
         beans, info = tfds.load("beans",with_info=True, as_supervised=True,split=['train','test'])
-        inputdata, outputdata = self.to_ndarray(beans[0])
+        inputdata, outputdata = to_ndarray(beans[0])
         inputdata = inputdata / 255.0
         outputdata = [[min(e[0],1)] for e in outputdata]
         testidata, testodata = self.to_ndarray(beans[1])
@@ -104,7 +107,7 @@ class TestMain(unittest.TestCase):
         o = h.append(1,main.layer.LINEAR,normal=None )
         m = main.model(l, main.model.MSR,learningRate=.005,optimizer=main.model.ADAM)
         ds, info = tfds.load("diamonds", with_info=True, as_supervised=True, split=['train'])
-        inputdata, outputdata = self.to_ndarray(ds[0])
+        inputdata, outputdata = to_ndarray(ds[0])
         inputdata = [[v for _, v in l[0].items()] for l in inputdata]
 
         tsize = len(inputdata) - 20
@@ -141,9 +144,9 @@ class TestMain(unittest.TestCase):
             print(f"Input: {ival} Actual: {p[i]}")
 
     def test_small(self):
-        l = main.layer(7,main.layer.LRELU)
-        m = l.append(7,main.layer.LRELU)
-        m.append(2,main.layer.SOFTMAX)
+        l = layers.dense(7,main.layer.LRELU)
+        m = l.appendDense(7,main.layer.LRELU)
+        m.appendDense(2,main.layer.SOFTMAX)
         input = [[0],[1]]
         output = [[0],[1]]
         m = main.model(l,main.model.CROSS   ,learningRate=.3,optimizer=main.model.ADAM)
@@ -153,6 +156,69 @@ class TestMain(unittest.TestCase):
         for i, ival in enumerate(testi):
             print(f"Input: {ival} Actual: {p[i]}")
 
+    def load_csv(self,path):
+        rec = np.recfromcsv(path)
+        data = [[p for p in r] for r in rec]
+        return data, rec.dtype.names
+
+    def test_fossil_ds(self):
+        data, names = self.load_csv('fossils/train_data.csv')
+       # test, _ = self.load_csv('fossils/test_data.csv')
+        pmap = {b'Normal polarity': 0, b'Reversed polarity' : 1}
+        bmap = {False: 0, True: 1}
+        rocks = [b'Sandstone',b'Shale',b'Limestone',b'Conglomerate']
+        pos = [b'Bottom',b'Middle',b'Top']
+        periods = set()
+        for d in data:
+            periods.add(d[4])
+        a = list(periods)
+        rmap = {k:i for i, k in enumerate(rocks)}
+        posmap = {k:i for i, k in enumerate(pos)}
+        geomap = {k:i for i, k in enumerate(a)}
+        out = [d[-1] for d in data]
+        output = np.reshape(out,(-1,1))
+        input = np.array([d[0:4]+[geomap[d[4]]]+[pmap[d[5]]]+[bmap[d[6]]] + [d[7]] + [rmap[d[8]]] + [posmap[d[9]]] + d[10:-1] for d in data])
+
+        testsize = 20
+        to = output[:testsize]
+        ti = input[:testsize]
+
+        normalparams = {}
+        output = normalfuncs.zeromeannormal(output[testsize:],normalparams)
+        input = input[testsize:]
+
+        l = main.layer(20,normal=main.layer.ZMNORMAL)
+        n = l.append(20)
+        r = n.append(20)
+        o = r.append(1,main.layer.LINEAR)
+
+        m = main.model(l,main.model.MSR,learningRate=.0001)
+        m.train(input,output,numIterations=200)
+
+        pred = m.predict(ti)
+        pred = normalfuncs.undozeromean(pred,normalparams)
+        s = 0
+        for i in range(testsize):
+            print(ti[i])
+            print(pred[i])
+            print(f'Actual: {to[i]}')
+            print('')
+            s += abs(pred[i] - to[i]) ** 2
+        print(s/testsize)
+        print(math.sqrt(s)/testsize)
+
+    def test_conv(self):
+        l = layers.conv((3, 3), kernel=(3,3),padb=True)
+        s = l.weightShape(1)[0]
+        l.weights = np.reshape([5,-1,-1,-1,-1,-1,-1,-1,-1], s)
+        input = np.reshape([1,2,3,4,5,6,7,8,9],(1,3,3,1))
+        out = l.forwardTransform(input)
+        print(out)
+
 
 if __name__ == '__main':
+
     unittest.main()
+
+
+

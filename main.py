@@ -1,3 +1,4 @@
+import abc
 import math
 
 import numpy as np
@@ -6,36 +7,44 @@ import costfuncs
 import normalfuncs
 import weightinitfuncs
 import optimizefuncs
-
+from abc import ABC, abstractmethod
 LRELUW = .01
 
 
-#
-class layer:
+
+
+
+
+class layer(ABC):
     """A layer of a ML model
 
     Has a list of neurons each with a list of weights and a bias.
     Each neuron transforms an input vector x with the equation:
     y = wx + b
     """
-    WEIGHT_INIT_SCALAR = .1
+
+    #Density
+    DENSE = 'dense'
+    CONV = 'convolutional'
     BIAS_INIT = 0.0
-    SIGMOID = [a.sigmoid, a.siggrad]
-    TANH = [a.tanh, a.tanhgrad]
-    SOFTMAX = [a.softmax, a.softgrad]
+    # activation functions
+    ACT = {}
+    SIGMOID = (a.sigmoid, a.siggrad)
+    TANH = (a.tanh, a.tanhgrad)
+    SOFTMAX = (a.softmax, a.softgrad)
+    RELU = (lambda x: np.where(x >= 0, x, 0), lambda x: np.where(x >= 0, 1, 0))
     # leaky relu
-    LRELU = [a.lrelu, a.lrelugrad]
-    LINEAR = [lambda x: x, lambda _: 1]
+    LRELU = (a.lrelu, a.lrelugrad)
+    LINEAR = (lambda x: x, lambda _: 1)
 
     # normalization
-    MINMAX = [normalfuncs.minmaxnormal, normalfuncs.minmaxgrad]
-    ZMNORMAL = [normalfuncs.zeromeannormal, normalfuncs.zeromeangrad]
+    MINMAX = (normalfuncs.minmaxnormal, normalfuncs.minmaxgrad)
+    ZMNORMAL = (normalfuncs.zeromeannormal, normalfuncs.zeromeangrad)
 
     # Weight Init Functions
     HENORM = (weightinitfuncs.henormal,)
     XAVUNI = (weightinitfuncs.xavieruni,)
-
-    def __init__(self, amtNeurons: int, activation, prev: 'layer' = None, normal=None, weightinit=None):
+    def __init__(self, activation = LRELU, prev: 'layer' = None, normal=None, weightinit=None, channels = (1,1)):
         """
         :param amtNeurons: size of the layer
         :param activation: activation function used to transform output
@@ -45,7 +54,6 @@ class layer:
         biases: one bias for each neurons, shape: (amtNeurons,1)
         activation: a function which maps a [[float]] to another [[float]] of the same size
         """
-        self.amtNeurons = amtNeurons
         self.activation = activation
         if weightinit is not None:
             self.weightinit = weightinit
@@ -58,29 +66,20 @@ class layer:
         self.next: 'layer' = None
         self.weights, self.biases = None, None
         self.cache: [[float]] = None
-
         self.normal = normal
-        if prev is not None:
-            self.initWeights(prev.amtNeurons)
+        self.channels: tuple = channels
+        self.outputSize = 0
+    #def defineDensityParamsDefault(self):
 
-    def append(self, amtNeurons: int, activation, normal=ZMNORMAL):
-        nextLayer = layer(amtNeurons, activation, prev=self)
-        nextLayer.initWeights(self.amtNeurons)
-        if self.next is not None:
-            self.next.prev = nextLayer
-            self.next.initWeights(nextLayer.amtNeurons)
-            nextLayer.next = self.next
-        nextLayer.prev = self
-        self.next = nextLayer
 
-        nextLayer.normal = normal
-        return nextLayer
 
-    def initWeights(self, inputSize: int):
+
+    def initWeights(self, inputSize: int, outputSize):
         if inputSize == 0:
             return
-        self.weights = self.weightinit[0](inputSize, self.amtNeurons)
-        self.biases = np.full((1, self.amtNeurons), self.BIAS_INIT)
+        wshape, bshape = self.weightShape(inputSize)
+        self.weights = self.weightinit[0](inputSize, outputSize, wshape)
+        self.biases = np.full(bshape, self.BIAS_INIT)
 
     @staticmethod
     def multiple(amtNeurons: [int], activation: str, prev: 'layer' = None, normalL: list = None, normal1=None,
@@ -102,6 +101,64 @@ class layer:
             i += 1
         return rootL, curr
 
+    # overriden methods for density
+    @abc.abstractmethod
+    def weightShape(self, iSize):
+        pass
+
+
+    @abc.abstractmethod
+    def forwardTransform(self, inputData):
+        pass
+
+    def forwardPropagate(self, inputData, cacheData: bool):
+        """
+                propagates through a layer, by calculating the input to the next layer
+                :return: predicted values for y, the final layer
+                """
+        if self.normal is None:
+            normalized = inputData
+        else:
+            normalized = self.normal[0](inputData)
+        # forward propagate differently depending on density
+
+        transformed = self.forwardTransform(inputData)
+
+        outputData = self.activation[0](transformed)
+        if cacheData:
+            self.cache = (inputData, normalized, outputData)
+        if self.next is None:
+            return outputData
+        else:
+            return self.next.forwardPropagate(outputData, cacheData)
+
+    @abc.abstractmethod
+    def backwardTransform(self, dZ, normalgrad):
+        pass
+
+    def backwardPropagate(self, grads: [[float]], i, model):
+        x = self.cache[0]
+        z = self.cache[2]
+        if self.normal is not None:
+            # normalgrad is 1 x Feature Size
+            # broadcast
+            normalgrad = self.normal[1](x)
+        else: normalgrad = 1
+
+        actgrads = self.activation[1](z)
+        dZ = grads * actgrads
+        dW, dB, dX = self.backwardTransform(dZ, normalgrad)
+        self.cache = None
+
+        self.adjustWeights(dW, dB, i, model)
+        if self.prev is not None:
+            self.prev.backwardPropagate(dX, i-1, model)
+
+
+    def adjustWeights(self, dW, dB, i, model):
+        model.adjustWeights(self,dW,dB,i)
+        pass
+
 
 class model:
     # cost functions
@@ -110,10 +167,10 @@ class model:
     MSR = costfuncs.meanSquareError
 
     # optimizers
-    MOMENTUM = [optimizefuncs.momentuminit, optimizefuncs.momentum]
-    RMSP = [optimizefuncs.rmspinit, optimizefuncs.rmsp]
-    ADAM = [optimizefuncs.adaminit, optimizefuncs.adam]
-    def __init__(self, rootLayer: layer, cost, learningRate: float = .1, optimizer=MOMENTUM):
+    MOMENTUM = (optimizefuncs.momentuminit, optimizefuncs.momentum)
+    RMSP = (optimizefuncs.rmspinit, optimizefuncs.rmsp)
+    ADAM = (optimizefuncs.adaminit, optimizefuncs.adam)
+    def __init__(self, rootLayer: layer, cost, learningRate: float = .1, optimizer=ADAM):
         """
         :param rootLayer: inputLayer
         :param num_iterations: how many times the model trains
@@ -141,14 +198,14 @@ class model:
         outputData = np.array(outputData)
         ex = outputData.shape[0]
         if self.tailLayer.activation == self.tailLayer.SOFTMAX and np.shape(outputData)[1] == 1:
-            n = self.tailLayer.amtNeurons
+            n = self.tailLayer.outputSize
             o = np.zeros((ex, n))
             for i in range(ex):
                 o[i, outputData[i][0]] = 1
             outputData = o
         # init
         if self.rootLayer.weights is None:
-            self.rootLayer.initWeights(np.shape(inputData)[1])
+            self.rootLayer.initWeights(np.shape(inputData)[1],self.rootLayer.outputSize)
         assert (np.shape(self.tailLayer.weights)[1] == np.shape(outputData)[1])
         """
         :param inputData: training inputs; shape: (feature size, # of inputs
@@ -156,12 +213,12 @@ class model:
         """
         c = []
         for i in range(numIterations):
-            predictions = self.forwardPropagate(self.rootLayer, inputData, True)
+            predictions = self.rootLayer.forwardPropagate(inputData, True)
             if math.isnan(predictions[0][0]):
                 return False
             cost, grads = self.computeCost(predictions, outputData)
             c.append(np.sum(cost))
-            self.backwardPropagate(self.tailLayer, grads,self.numLayers - 1)
+            self.tailLayer.backwardPropagate(grads,self.numLayers - 1, self)
             self.graddict['t'] += 1
         return c
 
@@ -169,29 +226,8 @@ class model:
         if self.rootLayer.weights is None:
             return
         assert (np.shape(np.shape(inputData)[1] == self.rootLayer.weights)[0])
-        predictions = self.forwardPropagate(self.rootLayer, inputData, False)
+        predictions = self.rootLayer.forwardPropagate(inputData, False)
         return predictions
-
-    def forwardPropagate(self, currLayer: layer, inputData: [[float]], cacheData: bool):
-        assert (currLayer)
-        assert (np.shape(np.shape(inputData)[1] == currLayer.weights)[0])
-        """
-        propagates through a layer, by calculating the input to the next layer
-        :return: predicted values for y, the final layer
-        """
-        if currLayer.normal is None:
-            normalized = inputData
-        else:
-            normalized = currLayer.normal[0](inputData)
-        # linear transformation
-        transformed = np.dot(normalized, currLayer.weights) + currLayer.biases
-        outputData = currLayer.activation[0](transformed)
-        if cacheData:
-            currLayer.cache = (inputData, normalized, outputData)
-        if currLayer.next is None:
-            return outputData
-        else:
-            return self.forwardPropagate(currLayer.next, outputData, cacheData)
 
     def computeCost(self, prediction, outputData):
         """
@@ -203,43 +239,6 @@ class model:
         cost, grads = self.cost(prediction, outputData)
         return cost, grads
 
-    def backwardPropagate(self, currLayer: layer, grads: [[float]], i):
-        assert (currLayer)
-        x = currLayer.cache[0]
-        nx = currLayer.cache[1]
-        z = currLayer.cache[2]
-        actgrads = currLayer.activation[1](z)
-        dZ = grads * actgrads
-        # Z = WN(X) + B
-        # dZ/dW = N(X)
-        dW = np.dot(dZ.T, nx).T
-        # dZ/dB = 1
-        dB = np.sum(dZ, axis=0).reshape((1, -1))
-
-        currLayer.cache = None
-        if currLayer.prev is None:
-            self.adjustWeights(currLayer, dW, dB, i)
-            return
-
-        # dZ/dN(X) = WT
-        # dN(X)/dX = 1x2
-
-        # XW = 1x3
-        # dX = 3x2
-        # dL/dX = 1x2
-        # dZ/dX =
-
-        # dX: Z * B
-        WT = np.transpose(currLayer.weights)
-        if currLayer.normal is not None:
-            # normalgrad is 1 x Feature Size
-            # broadcast
-            normalgrad = currLayer.normal[1](x)
-            WT = WT * normalgrad
-        dX = np.dot(dZ, WT)
-
-        self.adjustWeights(currLayer, dW, dB, i)
-        self.backwardPropagate(currLayer.prev, dX, i-1)
 
     def adjustWeights(self, currLayer: layer, wGrads: [[float]], bGrads: [[float]], i):
         assert (np.shape(wGrads) == np.shape(currLayer.weights))
