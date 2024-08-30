@@ -1,9 +1,11 @@
 import abc
 import math
 
+import numpy
 import numpy as np
 import activationfuncs as a
 import costfuncs
+import main
 import normalfuncs
 import weightinitfuncs
 import optimizefuncs
@@ -44,7 +46,7 @@ class layer(ABC):
     # Weight Init Functions
     HENORM = (weightinitfuncs.henormal,)
     XAVUNI = (weightinitfuncs.xavieruni,)
-    def __init__(self, activation = LRELU, prev: 'layer' = None, normal=None, weightinit=None, channels = (1,1)):
+    def __init__(self, activation = LRELU, prev: 'layer' = None, normal=ZMNORMAL, weightinit=None, channels = (1,1)):
         """
         :param amtNeurons: size of the layer
         :param activation: activation function used to transform output
@@ -72,7 +74,14 @@ class layer(ABC):
     #def defineDensityParamsDefault(self):
 
 
-
+    def append(self, newLayer,ochannels=1):
+        if self.next is not None:
+            self.next.prev = newLayer
+            newLayer.next = self.next
+        newLayer.prev = self
+        self.next = newLayer
+        newLayer.channels = (self.channels[1],ochannels)
+        return newLayer
 
     def initWeights(self, inputSize: int, outputSize):
         if inputSize == 0:
@@ -112,6 +121,11 @@ class layer(ABC):
         pass
 
     def forwardPropagate(self, inputData, cacheData: bool):
+        if self.weights is None:
+            iSize = np.prod(np.shape(inputData[0]))
+            while type(iSize) == np.ndarray:
+                iSize = iSize[0]
+            self.initWeights(iSize,self.outputSize)
         """
                 propagates through a layer, by calculating the input to the next layer
                 :return: predicted values for y, the final layer
@@ -121,12 +135,14 @@ class layer(ABC):
         else:
             normalized = self.normal[0](inputData)
         # forward propagate differently depending on density
-
-        transformed = self.forwardTransform(inputData)
+        transformed = self.forwardTransform(normalized)
 
         outputData = self.activation[0](transformed)
         if cacheData:
-            self.cache = (inputData, normalized, outputData)
+            if self.cache is None:
+                self.cache = (inputData, normalized, outputData)
+            else:
+                self.cache = (inputData,self.cache[1],outputData)
         if self.next is None:
             return outputData
         else:
@@ -146,6 +162,7 @@ class layer(ABC):
         else: normalgrad = 1
 
         actgrads = self.activation[1](z)
+        grads = np.reshape(grads,np.shape(actgrads))
         dZ = grads * actgrads
         dW, dB, dX = self.backwardTransform(dZ, normalgrad)
         self.cache = None
@@ -203,10 +220,7 @@ class model:
             for i in range(ex):
                 o[i, outputData[i][0]] = 1
             outputData = o
-        # init
-        if self.rootLayer.weights is None:
-            self.rootLayer.initWeights(np.shape(inputData)[1],self.rootLayer.outputSize)
-        assert (np.shape(self.tailLayer.weights)[1] == np.shape(outputData)[1])
+        #assert (np.shape(self.tailLayer.weights)[1] == np.shape(outputData)[1])
         """
         :param inputData: training inputs; shape: (feature size, # of inputs
         :param outputData: training outpus; shape: (label size, # of inputs)
@@ -214,7 +228,10 @@ class model:
         c = []
         for i in range(numIterations):
             predictions = self.rootLayer.forwardPropagate(inputData, True)
-            if math.isnan(predictions[0][0]):
+            p = predictions[0]
+            while type(p) == numpy.ndarray:
+                p = p[0]
+            if math.isnan(p):
                 return False
             cost, grads = self.computeCost(predictions, outputData)
             c.append(np.sum(cost))

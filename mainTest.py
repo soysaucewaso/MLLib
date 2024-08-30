@@ -145,8 +145,8 @@ class TestMain(unittest.TestCase):
 
     def test_small(self):
         l = layers.dense(7,main.layer.LRELU)
-        m = l.appendDense(7,main.layer.LRELU)
-        m.appendDense(2,main.layer.SOFTMAX)
+        m = l.append(layers.dense(7,main.layer.LRELU))
+        m.append(layers.dense(2,main.layer.SOFTMAX))
         input = [[0],[1]]
         output = [[0],[1]]
         m = main.model(l,main.model.CROSS   ,learningRate=.3,optimizer=main.model.ADAM)
@@ -208,12 +208,16 @@ class TestMain(unittest.TestCase):
         print(math.sqrt(s)/testsize)
 
     def test_conv(self):
-        l = layers.conv((3, 3), kernel=(3,3),padb=True)
+        l = layers.conv((4,4), kernel=(2,2), stride=(2,1),padb=False,)
+        l2 = l.append(layers.dense(1))
+
         s = l.weightShape(1)[0]
-        l.weights = np.reshape([5,-1,-1,-1,-1,-1,-1,-1,-1], s)
-        input = np.reshape([1,2,3,4,5,6,7,8,9],(1,3,3,1))
-        out = l.forwardTransform(input)
-        print(out)
+        m = main.model(l,cost=main.model.MSR)
+        i = np.reshape([[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],[16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]], (2, 4, 4, 1))
+        o = np.reshape([[0],[2]],(2,1))
+        m.train(i,o)
+        print(l.weights)
+        print(m.predict(i))
 
 
 if __name__ == '__main':
