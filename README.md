@@ -1,13 +1,13 @@
 A neural network framework used to easily make large or small efficient networks.
 
-Implements a model as a linked list of layers
+Implements a model as a linked list of layers.
 Recursively forward and backward propagates through layers.
 
 main.layer is an abstract class allowing for runtime polymorphism with different layer implementations.
 So far I've only implemented dense and convolutional layers.
 
-Input must be a Batch Size X Features numpy matrix for a dense layer
-Must be a Batch Size X FeatureD1 X ... X FeatureDN X Channels
+In a dense layer, Input must be a Batch Size X Features numpy matrix.
+In a conv layer, Input is Batch Size X FeatureD1 X ... X FeatureDN X Channels.
 Example 2 layer model:
 ```
 # most of these params have smart defaults and are explicity assigned to demonstrate functionality
