@@ -26,11 +26,10 @@ class layer(ABC):
     """
 
     #Density
-    DENSE = 'dense'
-    CONV = 'convolutional'
+
     BIAS_INIT = 0.0
-    # activation functions
-    ACT = {}
+
+
     SIGMOID = (a.sigmoid, a.siggrad)
     TANH = (a.tanh, a.tanhgrad)
     SOFTMAX = (a.softmax, a.softgrad)
@@ -162,7 +161,7 @@ class layer(ABC):
         else: normalgrad = 1
 
         actgrads = self.activation[1](z)
-        grads = np.reshape(grads,np.shape(actgrads))
+        grads = np.reshape(grads,np.shape(z))
         dZ = grads * actgrads
         dW, dB, dX = self.backwardTransform(dZ, normalgrad)
         self.cache = None

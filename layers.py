@@ -23,7 +23,9 @@ class dense(main.layer):
         return transformed
 
     def backwardTransform(self, dZ, normalgrad):
-        normalgrad = np.reshape(normalgrad,(np.shape(normalgrad)[0],-1))
+        ngradshape = np.shape(normalgrad)
+        if len(ngradshape) > 0:
+            normalgrad = np.reshape(normalgrad,(ngradshape[0],-1))
         # dZ is the derivative of the loss function with respect to z
         # normalgrad is the derivative of x with respect to n(x)
         nx = self.cache[1]
@@ -53,7 +55,7 @@ class dense(main.layer):
 
 class conv(main.layer):
 
-    def __init__(self,inputD, kernel = (3, 3), stride = (1,1), activation = main.layer.LRELU, prev: 'layer' = None, normal = None, weightinit = None,channels = (1, 1),padb=False):
+    def __init__(self,inputD, kernel = (3, 3), stride = (1,1), activation = main.layer.LRELU, prev: 'layer' = None, normal = main.layer.ZMNORMAL, weightinit = None,channels = (1, 1),padb=False):
         assert(len(inputD) == len(kernel) and len(inputD) == len(stride))
         assert(len(channels) == 2)
         super().__init__(activation, prev, normal, weightinit, channels)

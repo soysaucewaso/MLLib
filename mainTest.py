@@ -85,29 +85,13 @@ class TestMain(unittest.TestCase):
         for i in range(k):
             print(f"Input: {testi[i]}Predicted: {p[i]},Actual: {testo[i]}")
 
-    def test_with_dataset(self):
-        l = main.layer(1, 'sigmoid')
-        m = main.model(l,'crossEntropyCost',learningRate=.00001)
-        beans, info = tfds.load("beans",with_info=True, as_supervised=True,split=['train','test'])
-        inputdata, outputdata = to_ndarray(beans[0])
-        inputdata = inputdata / 255.0
-        outputdata = [[min(e[0],1)] for e in outputdata]
-        testidata, testodata = self.to_ndarray(beans[1])
-        p1 = m.predict(testidata)
-        m.train(inputdata,outputdata,2)
 
-        p2 = m.predict(testidata)
-        for i in range(20):
-            print(f"P1: {p1[i]}, P2: {p2[i]}, Actual: {testodata[i]}")
 
     def test_dataset2(self):
 
-        l = main.layer(40, main.layer.LRELU)
-        h = l.append(40,main.layer.TANH)
-        o = h.append(1,main.layer.LINEAR,normal=None )
-        m = main.model(l, main.model.MSR,learningRate=.005,optimizer=main.model.ADAM)
+
         ds, info = tfds.load("diamonds", with_info=True, as_supervised=True, split=['train'])
-        inputdata, outputdata = to_ndarray(ds[0])
+        inputdata, outputdata = list(ds[0])
         inputdata = [[v for _, v in l[0].items()] for l in inputdata]
 
         tsize = len(inputdata) - 20
