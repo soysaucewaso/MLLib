@@ -9,6 +9,7 @@ So far I've only implemented dense and convolutional layers.
 Input must be a Batch Size X Features numpy matrix for a dense layer
 Must be a Batch Size X FeatureD1 X ... X FeatureDN X Channels
 Example 2 layer model:
+```
 # most of these params have smart defaults and are explicity assigned to demonstrate functionality
 
 # amtNeurons is output dimension
@@ -27,7 +28,7 @@ model = main.model(rootLayer: l1, cost=main.layer.MSR,learningRate=.1,optimizer=
 costs = model.train(inputData,outputData,numIterations=100)
 
 predicted = model.predict(testInput)
-
+```
 
 Implementation Notes:
 Implements various functions as tuples of functions.
